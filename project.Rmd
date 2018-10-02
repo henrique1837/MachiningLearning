@@ -1,0 +1,185 @@
+---
+title: "Practical Machine Learning Project"
+author: "Henrique dos Santos Almeida"
+date: "23 de setembro de 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary 
+
+### Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants as they perform barbell lifts correctly and incorrectly 5 different ways.
+
+Six young healthy participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions:
+ * Class A - exactly according to the specification
+ * Class B - throwing the elbows to the front
+ * Class C - lifting the dumbbell only halfway
+ * Class D - lowering the dumbbell only halfway
+ * Class E - throwing the hips to the front
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes.
+
+### Data
+
+The training data for this project are available at:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available at:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+### Objective
+
+The goal of this project is to predict the manner in which subjects did the exercise. This is the “classe” variable in the training set. The model will use the other variables to predict it.
+
+
+## Geting and cleaning data
+
+### Geting data
+
+
+```{r get_data,echo=TRUE}
+## Packages ##
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot) 
+#### Geting and reading data ####
+# setwd("Documentos/coursera/pratical_machining/project/")
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+               destfile = "training.csv")
+ download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+               destfile = "testing.csv")
+
+```
+
+### Visualizing data
+
+```{r view_data}
+#### Visualizing data ####
+training <- read.csv(file="training.csv")
+testing <- read.csv(file="testing.csv")
+## Print first 25 columns ##
+str(training[,1:25])
+## Check classes ##
+plot(training$classe,xlab="Class level",ylab="Frequency")
+```
+
+### Cleaning Data
+
+There are some columns that should be removed from data (columns 1 to 7)  and others that have empty values or values equal to 0 or "NA". Those columns will be removed from data.
+
+```{r clean_data}
+
+#### Cleaning Data ####
+# Removing unecessary fields #
+training <- training[,c(-1:-7)]
+testing <- testing[,c(-1:-7)]
+# Sum NA and ""
+get_empty <- function(df=training){
+  total_empty <- numeric()
+  for(i in 1:ncol(df)){
+    total_empty[i] <- sum(is.na(as.character(df[,i])))+sum(length(which(nchar(as.character(df[,i])) == 0)))
+  }
+  return(total_empty)
+}
+total_empty <- get_empty(df=training)
+# Removing all columns that have NA's
+training <- training[,which(total_empty==0)]
+
+```
+
+
+
+## Model Development
+
+The main objective of the model will be predict what kind of classe (A to E) the observations from the testing data are based on all atributes observed. For this kind of problem two models will be tested: decision trees and random forest. A cross validation will be made first with the training dataset in order to verify which model has higher accuracy and if that accuracy is high.
+
+### Cross Validation
+
+#### Dividing training dataset
+
+  To reproduce this the seed must be set 12233. The main objective of this process is to divide the training in two random samples (train1 and train2). One of them will represent 90% of the entire data set and the other will be used to predict classes using the model choosed and them compared with the real class in order to obsverve the accuracy and other atributes of the models
+
+```{r cross_val}
+#### Creating Model ####
+set.seed(12233)
+
+## Dividing training dataset in 2 parts with p=0.9 
+inTrain <- createDataPartition(training$classe, p = 0.9, list=FALSE)
+train1 <- training[inTrain,]
+train2 <- training[-inTrain,]
+```
+
+## Expected out-of-sample error
+  
+  The expected out-of-sample error must be as lower as possible and correspond to 1 - accuracy. First models will be tested in the train2 data set and the one that have higher accuracy (or lower out-of-sample error) will be choosed to predict classes of the testing data.
+
+### Testing Model Decision Tree
+
+```{r testing_modelDecision}
+decisionModel <- rpart(classe~., data=train1, method="class")
+decisionModel
+
+#### Testing Model ###
+## Testing the model with train2 data from training dataset
+train2_pred <- predict(decisionModel, newdata=train2,type = "class")
+## Test result in train2 data ##
+## Confusion Matrix 
+confusionMatrix(reference = train2_pred,data = train2$classe)
+
+
+```
+
+From results above we can observe that this model has a accuracy of 75.61% so we can expect an out-sample-error of 24.39% . 
+
+### Testing Model Random Forest
+
+```{r testing_modelRandom}
+randomForMod <- randomForest(classe~., data=train1, importance=TRUE)
+randomForMod
+
+#### Testing Model ###
+## Testing the model with train2 data from training dataset
+train2_pred <- predict(randomForMod, newdata=train2)
+## Confusion Matrix 
+confusionMatrix(train2_pred, train2$classe)
+
+
+randomImp <- varImp(randomForMod, scale=FALSE) 
+varImpPlot(randomForMod,sort = TRUE, n.var = 10, main="Top 10 Variable Importance")
+```
+
+From results above we can observe that this model has a accuracy of 99.59% so we can expect an out-sample-error of 0.41%. 
+Now we can select one of those models tested in order to try to predict what class is each observation of the testing data. As random forest has a higher accuracy, this model will be used.
+
+
+### Testing Better Model on traning data
+
+```{r testing_training}
+testing_pred <- predict(randomForMod, newdata=testing)
+#testing_pred
+testing$class <- testing_pred
+## Save Result ##
+write.csv(x=testing,file = "testing_class.csv")
+
+```
+
+## Results
+
+```{r result}
+## Print Result ##
+as.character(testing$class)
+```
+
+## Session 
+
+```{r session}
+sessionInfo()
+```
